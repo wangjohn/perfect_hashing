@@ -8,13 +8,14 @@ class PerfectHash:
         self.lower = [[] for i in xrange(self.n)]
         self.top_level_hash = UniversalHash(self.n)
         self.lower_level_hashes = [UniversalHash(4) for i in xrange(self.n)]
+        self.sum_of_sqs = 0
 
     def reset_hashes(self):
         self.top_level_hash.reset_hash(self.n)
         self.lower_level_hashes = [UniversalHash() for i in xrange(self.n)]
 
-    def rehash_top_level(self):
-        self.n = self.n*2
+    def rehash_top_level(self, new_n=self.n*2):
+        self.n = new_n
         new_lower = [[] for i in xrange(self.n)]
         self.reset_hashes()
         for i in xrange(len(self.lower)):
@@ -25,8 +26,13 @@ class PerfectHash:
                new_lower[top_bucket].append(item)
 
         self.lower = [[] for i in xrange(self.n)]
+        self.sum_of_sqs = 0
         for i in xrange(len(new_lower)):
             self.reconstruct_bottom_level(i, new_lower[i])
+            self.sum_of_sqs = len(new_lower[i])**2
+
+        if self.sum_of_sqs > 5*self.n:
+            self.reshash_top_level(self.n)
 
     def reconstruct_bottom_level(self, i, old_items=False):
         if not old_items:
@@ -36,6 +42,9 @@ class PerfectHash:
         secondary_hash.reset_hash(4*previous_size**2)
         new_bucket = [False for i in xrange(4*previous_size**2)]
         for item in old_items:
+            if new_bucket[secondary_hash.get_hashed_value(item.key)]:
+                self.reconstruct_bottom_level(i, old_items)
+                return
             new_bucket[secondary_hash.get_hashed_value(item.key)] = item
         self.lower[i] = new_bucket
 
@@ -44,18 +53,32 @@ class PerfectHash:
         return self.lower[top_bucket][self.lower_level_hashes.get_hashed_value(item.key)]
 
     def insert(self, item):
+        if self.find(item):
+            raise "Value is already in the data structure."
+        
         top_bucket = self.top_level_hash.get_hashed_value(item.key)
         secondary_bucket = self.lower_level_hashes[top_bucket].get_hashed_value(item.key)
         old_item = self.lower[top_bucket][secondary_bucket]
+        self.n += 1
         if old_item:
             self.lower[top_bucket].append(item)
             self.reconstruct_bottom_level(top_bucket)
+            new_size = len(self.lower[top_bucket])
+            self.sum_of_sqs += 2*new_size-1
+
+            # rehash if we break the constraint that \sum_{i=1}^n s_i^2 = O(n)
+            if self.sum_of_sqs > 5*self.n:
+                self.rehash_top_level(self.n)
         else:
             self.lower[top_bucket][secondary_bucket] = item
         
     def delete(self, item):
         top_bucket = self.top_level_hash.get_hashed_value(item.key)
-        self.lower[top_bucket][self.lower_level_hashes.get_hashed_value(item.key)] = False
+        previous_value = self.lower[top_bucket][self.lower_level_hashes.get_hashed_value(item.key)]  
+        if previous_value:
+            self.lower[top_bucket][self.lower_level_hashes.get_hashed_value(item.key)] = False
+            self.n -= 1
+        return previous_value
 
 class UniversalHash:
     def __init__(self, n=20):
